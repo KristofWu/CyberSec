@@ -1,0 +1,11 @@
+df.head()        # first 5 rows or df.head(6)
+df.shape         # rows and columns: (20, 6)
+df.columns       # columns names
+df.info()        # infos
+
+
+import pandas as pd
+
+df = pd.read_csv("firewall.csv")
+blocked = df[df["action"] != "ACCEPT"]
+blocked.groupby("dst_port")["src_ip"].value_counts()   zbierać dwa pola naraz z linii? groupby

@@ -1,31 +1,40 @@
 
-def susp_ips():
-    for ip, count in blocked_ips.items():
-        print(f"Blocked IP:  {ip}, attempts: {count}")
+def show_recs():
+    for r in records:
+        print(r)
 
-blocked_ips = {}
+records = []
 
 try:
     with open("firewall.log", "r") as file:
         for line in file:
             source = None
             action = None
+            dpt = None
+            protocol = None
             cleaned_line = line.split()
             for part in cleaned_line:
                 if part.startswith("SRC="):
                     source = part.split("=", 1)[1]    
                 elif part.startswith("ACTION="):
                     action = part.split("=", 1)[1]
-            if action == "DROP" or action == "REJECT":
-                if source in blocked_ips:
-                    blocked_ips[source] =  blocked_ips[source] + 1
-                else: 
-                    blocked_ips[source] = 1     
+                elif part.startswith("DPT="):
+                    dpt = part.split("=", 1)[1]
+                elif part.startswith("PROTO="):
+                    protocol = part.split("=", 1)[1]
+            record = {
+                "src_ip": source,
+                "action": action,
+                "dpt": dpt,
+                "protocol": protocol
+            }
+
+            records.append(record)     
                 
 except FileNotFoundError:
   print("File does not exist")  
 
-susp_ips()
+show_recs()
 
 
 
