@@ -117,6 +117,7 @@ The model cleanly separates three attackers from normal traffic:
 - **`203.0.113.45`** — brute-force (45 attempts, all on port 22/SSH)
 - **`45.155.205.211`** — port scan (15 different ports)
 - **`185.220.101.33`** — hammering (port 445/SMB)
+
 ![wykres](output.png)
 
 ### 🚀 How to run
@@ -243,6 +244,8 @@ Model czysto oddziela trzech napastników od normalnego ruchu:
 - **`203.0.113.45`** — brute-force (45 prób, wszystkie na port 22/SSH)
 - **`45.155.205.211`** — skanowanie portów (15 różnych portów)
 - **`185.220.101.33`** — hammering (port 445/SMB)
+
+![wykres](output.png)
 
 ### 🚀 Jak uruchomić
 
