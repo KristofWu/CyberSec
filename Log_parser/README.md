@@ -120,15 +120,6 @@ The model cleanly separates three attackers from normal traffic:
 
 ![wykres](output.png)
 
-### 🚀 How to run
-
-```bash
-pip install pandas scikit-learn matplotlib
-python firewall_anomaly_detection.py
-```
-
-Make sure `firewall_big.log` is in the same folder.
-
 ### 🛠️ Tech stack
 
 Python · pandas · scikit-learn · matplotlib
@@ -247,14 +238,6 @@ Model czysto oddziela trzech napastników od normalnego ruchu:
 
 ![wykres](output.png)
 
-### 🚀 Jak uruchomić
-
-```bash
-pip install pandas scikit-learn matplotlib
-python firewall_anomaly_detection.py
-```
-
-Upewnij się, że `firewall_big.log` jest w tym samym folderze.
 
 ### 🛠️ Technologie
 
