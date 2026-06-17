@@ -1,18 +1,20 @@
+import pandas as pd
+from sklearn.ensemble import IsolationForest
+import matplotlib.pyplot as plt
 
-def show_recs():
-    for r in records:
-        print(r)
 
 records = []
 
 try:
-    with open("firewall.log", "r") as file:
+    with open("firewall_big.log", "r") as file:
         for line in file:
             source = None
             action = None
             dpt = None
             protocol = None
+
             cleaned_line = line.split()
+
             for part in cleaned_line:
                 if part.startswith("SRC="):
                     source = part.split("=", 1)[1]    
@@ -22,6 +24,7 @@ try:
                     dpt = part.split("=", 1)[1]
                 elif part.startswith("PROTO="):
                     protocol = part.split("=", 1)[1]
+
             record = {
                 "src_ip": source,
                 "action": action,
@@ -34,8 +37,37 @@ try:
 except FileNotFoundError:
   print("File does not exist")  
 
-show_recs()
 
+df = pd.DataFrame(records)
+df["is_blocked"] = df["action"] != "ACCEPT"
+
+
+group = df.groupby("src_ip").agg(
+    total = ("action", "count"),
+    unique_ports = ("dpt", "nunique"),
+    blocked = ("is_blocked", "sum"),
+)
+group["blocked_ratio"] = group["blocked"] / group["total"]
+group
+
+X = group[["total", "unique_ports", "blocked", "blocked_ratio"]]
+
+
+model = IsolationForest(contamination=0.2, random_state=42)
+
+group["anomaly"] = model.fit_predict(X)
+
+plt.scatter(group["total"], group["unique_ports"], c = group["anomaly"])
+plt.xlabel("Number of actions")
+plt.ylabel("Number of different ports")
+plt.title("Anomalies detection based on firewall logs")
+for ip, row in group.iterrows():
+    if row["anomaly"] == -1:
+        plt.text(row.total, row.unique_ports, ip)
+plt.show()
+
+print("===Detected anomalies===")
+print(group[group["anomaly"] == -1])
 
 
 
