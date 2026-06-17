@@ -118,14 +118,7 @@ The model cleanly separates three attackers from normal traffic:
 - **`45.155.205.211`** — port scan (15 different ports)
 - **`185.220.101.33`** — hammering (port 445/SMB)
 
-### 🚀 How to run
-
-```bash
-pip install pandas scikit-learn matplotlib
-python firewall_anomaly_detection.py
-```
-
-Make sure `firewall_big.log` is in the same folder.
+![wykres](output.png)
 
 ### 🛠️ Tech stack
 
@@ -243,14 +236,8 @@ Model czysto oddziela trzech napastników od normalnego ruchu:
 - **`45.155.205.211`** — skanowanie portów (15 różnych portów)
 - **`185.220.101.33`** — hammering (port 445/SMB)
 
-### 🚀 Jak uruchomić
+![wykres](output.png)
 
-```bash
-pip install pandas scikit-learn matplotlib
-python firewall_anomaly_detection.py
-```
-
-Upewnij się, że `firewall_big.log` jest w tym samym folderze.
 
 ### 🛠️ Technologie
 
