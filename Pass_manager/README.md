@@ -1,7 +1,6 @@
 # 🔐 Password Manager (OOP)
 
 > A command-line password manager built with object-oriented Python and persistent JSON storage.
->
 > Menedżer haseł działający w wierszu poleceń, zbudowany w obiektowym Pythonie z trwałym zapisem w JSON.
 
 🇬🇧 [English](#-english) | 🇵🇱 [Polski](#-polski)
