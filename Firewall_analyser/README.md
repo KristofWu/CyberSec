@@ -67,6 +67,8 @@ A convenience method that calls `self.parse()` then `self.analyze()` in the corr
 
 A scatter plot with activity (`total`) on X and port variety (`unique_ports`) on Y. These two features say *different* things, so different attack types land in different places: a brute-forcer (many attempts, one port) far right, a port scanner (many ports) high up. Colour encodes the model's verdict; only anomalies are labelled with their IP.
 
+![wykres](chart.png)
+
 ### 📊 Example result
 
 On the sample log the model cleanly separates three attackers from normal traffic:
@@ -162,6 +164,8 @@ Wygodna metoda, która woła `self.parse()`, a potem `self.analyze()` w poprawne
 #### 5. `plot()` — wizualizacja
 
 Wykres punktowy z aktywnością (`total`) na osi X i różnorodnością portów (`unique_ports`) na osi Y. Te dwie cechy mówią *różne* rzeczy, więc różne typy ataków lądują w różnych miejscach: brute-forcer (wiele prób, jeden port) daleko w prawo, skaner portów (wiele portów) wysoko. Kolor koduje werdykt modelu; podpisane są tylko anomalie (ich IP).
+
+![wykres](chart.png)
 
 ### 📊 Przykładowy wynik
 
