@@ -77,6 +77,8 @@ How it works:
 
 Because state accumulates, each save writes a progressively more complete picture — so an attacker spread across several chunks is eventually seen in full, exactly as in batch mode.
 
+![wykres](chart.png)
+
 ### 📊 Example result
 
 On the sample log, both modes cleanly identify three attackers:
@@ -168,6 +170,8 @@ Jak działa:
 3. Po pętli końcowy blok `if buffer:` przetwarza pozostały „ogon" — linie, które nie wypełniły ostatniego pełnego bufora.
 
 Ponieważ stan narasta, każdy zapis utrwala coraz pełniejszy obraz — więc napastnik rozłożony na kilka porcji jest w końcu widziany w całości, dokładnie jak w trybie wsadowym.
+
+![wykres](chart.png)
 
 ### 📊 Przykładowy wynik
 
