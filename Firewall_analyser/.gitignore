@@ -1,5 +1,6 @@
-# Wygenerowane raporty
+# Wygenerowane pliki (nie commitujemy)
 report.json
+firewall.db
 
 # Python
 __pycache__/

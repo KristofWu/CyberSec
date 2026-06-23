@@ -1,8 +1,8 @@
 # 🔥 Firewall Log Analyser (OOP)
 
-> An object-oriented tool that parses firewall logs and detects suspicious IP addresses using machine learning.
+> An object-oriented tool that parses firewall logs, detects suspicious IPs with machine learning, stores them in a database, and can process logs as a simulated live stream.
 >
-> Narzędzie obiektowe, które parsuje logi firewalla i wykrywa podejrzane adresy IP przy użyciu uczenia maszynowego.
+> Narzędzie obiektowe, które parsuje logi firewalla, wykrywa podejrzane IP przy użyciu uczenia maszynowego, zapisuje je do bazy danych i potrafi przetwarzać logi jako symulowany strumień na żywo.
 
 🇬🇧 [English](#-english) | 🇵🇱 [Polski](#-polski)
 
@@ -12,76 +12,78 @@
 
 ### 🎯 Project goal
 
-A self-contained **firewall log analyser** that takes a raw firewall log and answers one security question: **which IP addresses are behaving suspiciously?** It parses the log, builds a numerical behavioural profile for each IP, uses an Isolation Forest model to flag the ones that stand out, and exports the result as a console report, a JSON file and a scatter plot.
+A **firewall log analyser** that answers one security question: **which IP addresses are behaving suspiciously?** It parses the log, builds a behavioural profile per IP, flags outliers with an Isolation Forest model, and persists the findings. It runs in two modes: **batch** (analyse a whole file at once) and **streaming** (process the log line by line as if it were arriving live).
 
-This is **phase 1 (the local core)** of a larger project. The roadmap is: local core → streaming simulation + database → cloud deployment (AWS S3 / Lambda / SNS).
+### 🗺️ Roadmap
 
-### 🧠 Why object-oriented?
+- ✅ **Phase 1** — local core: parse, analyse, report, plot
+- ✅ **Phase 2** — SQLite database storage + streaming simulation
+- ⬜ **Phase 3** — cloud deployment (AWS S3 + Lambda + SNS alerts)
 
-Everything is wrapped in a single `FirewallAnalyser` class instead of loose scripts. The class bundles **data** (what it *has*) with **methods** (what it *can do*):
+### 🧠 Architecture: one class, two modes
 
-- **has** → the log path, the parsed records, the results table (`self.filepath`, `self.records`, `self.results`)
-- **can do** → parse, analyze, run, report, save_report, plot
+Everything lives in a single `FirewallAnalyser` class. The key design decision in Phase 2 was splitting parsing into two methods so the **same parser** works on a file *or* a buffer of streamed lines:
 
-The class takes the log path at creation, so one class can analyse any file:
+- `parse_to_lines(lines)` — parses any iterable of lines (the actual logic)
+- `parse()` — opens the file and hands its lines to `parse_to_lines`
+
+That one split is what makes both batch and streaming modes share the same code.
 
 ```python
+# Batch mode
 analyzer = FirewallAnalyser("firewall_big.log")
-analyzer.run()           # parse + analyze
-analyzer.report()        # print suspicious IPs
-analyzer.save_report()   # export them to report.json
-analyzer.plot()          # visualise
+analyzer.run()            # parse + analyze
+analyzer.report()         # print suspicious IPs
+analyzer.save_to_db()     # store in SQLite
+analyzer.plot()           # visualise
+
+# Streaming mode
+streamer = FirewallAnalyser("firewall_big.log")
+streamer.stream()         # buffered, accumulating, writes to DB as it goes
 ```
 
-### 📋 How the pipeline works
+### 📋 The core pipeline (Phase 1)
 
-#### 1. `parse()` — raw log → structured records
+1. **`parse_to_lines()` / `parse()`** — firewall logs use `KEY=VALUE` format. The parser extracts `SRC`, `ACTION`, `DPT`, `PROTO` from each line into a record dict. Variables reset to `None` per line so a missing field doesn't inherit the previous line's value.
 
-Firewall logs use a `KEY=VALUE` format. The parser reads line by line, splits each line into chunks, and extracts `SRC`, `ACTION`, `DPT`, `PROTO`. Each line becomes one dictionary stored in `self.records`.
+2. **`analyze()`** — groups events per IP into features (`total`, `unique_ports`, `blocked`, `blocked_ratio`) and runs an **Isolation Forest** to flag outliers (`1` = normal, `-1` = anomaly). `contamination=0.2` is the sensitivity dial.
 
-Variables are reset to `None` at the start of every line — so a line missing a field (e.g. an ICMP ping has no port) keeps a clean `None` instead of inheriting the previous line's value.
+3. **`report()` / `save_report()` / `plot()`** — console output, JSON export (with `reset_index()` so the IP survives), and a scatter plot that labels anomalies.
 
-#### 2. `analyze()` — records → behavioural profile + anomaly detection
+### 🗄️ Database storage (Phase 2)
 
-The records become a pandas DataFrame. Events are grouped per IP and summarised into features:
+Instead of a single overwritten JSON file, findings are stored in a **SQLite** database (`firewall.db`, table `threats`).
 
-| Feature | Meaning | Attacker | Normal user |
-|---|---|---|---|
-| `total` | how active | high | moderate |
-| `unique_ports` | port variety | high (scan) | 1–3 |
-| `blocked` | times blocked | high | 0 |
-| `blocked_ratio` | share blocked | ~1.0 | ~0.0 |
+- **`save_to_db()`** uses a **clean-and-write** strategy: `DELETE FROM threats`, then `to_sql(...)`. This makes the operation **idempotent** — running it repeatedly always yields the same table, with no duplicates.
+- Reading back uses `pandas.read_sql(...)`, which returns a DataFrame **with column names** (so the numbers are self-explanatory), unlike raw `fetchall()` tuples.
 
-An **Isolation Forest** model then flags outliers: `1` = normal, `-1` = anomaly. The idea: anomalies are easy to isolate because they sit far from the crowd; normal points are hard to isolate because they are surrounded by similar points. `contamination=0.2` is the sensitivity dial (expected share of anomalies).
+`to_sql` ↔ `read_sql` mirror each other: write a DataFrame to the DB, read it back into a DataFrame.
 
-#### 3. `run()` — orchestration
+### 🌊 Streaming simulation (Phase 2)
 
-A convenience method that calls `self.parse()` then `self.analyze()` in the correct order, so the caller doesn't have to remember the sequence.
+Real firewalls never stop — logs arrive continuously. `stream()` simulates this and solves three classic streaming problems that show up the moment you process data in chunks:
 
-#### 4. `report()` / `save_report()` — the output
+| Problem | Symptom | Fix |
+|---|---|---|
+| **Chunk overwrite** | only the last chunk survived (1 attacker instead of 3) | accumulating state — one analyser for the whole stream |
+| **Attacker split across chunks** | `total=20` instead of `25` | accumulate records, re-analyse the growing whole each time |
+| **The tail / remainder** | last lines never processed (a missing attacker) | a final block processes the leftover buffer after the loop |
 
-- `report()` prints the anomalies (suspicious IPs) to the console.
-- `save_report()` filters the anomalies, runs `reset_index()` so the IP address becomes a column (otherwise it would be lost as the DataFrame index), and writes them to `report.json`.
+How it works:
 
-#### 5. `plot()` — visualisation
+1. Read line by line with a small delay (`time.sleep`) to mimic a live feed.
+2. Collect lines into a **buffer**. Every `BUFFER_SIZE` lines, parse the chunk into the **accumulating** `self.records`, re-analyse **everything seen so far**, and save to the DB.
+3. After the loop, a final `if buffer:` block processes the remaining "tail" lines that didn't fill a last full buffer.
 
-A scatter plot with activity (`total`) on X and port variety (`unique_ports`) on Y. These two features say *different* things, so different attack types land in different places: a brute-forcer (many attempts, one port) far right, a port scanner (many ports) high up. Colour encodes the model's verdict; only anomalies are labelled with their IP.
+Because state accumulates, each save writes a progressively more complete picture — so an attacker spread across several chunks is eventually seen in full, exactly as in batch mode.
 
 ### 📊 Example result
 
-On the sample log the model cleanly separates three attackers from normal traffic:
+On the sample log, both modes cleanly identify three attackers:
 
-- **`203.0.113.45`** — brute-force (45 attempts, all on port 22 / SSH)
+- **`203.0.113.45`** — brute-force (45 attempts, port 22 / SSH)
 - **`45.155.205.211`** — port scan (15 different ports)
 - **`185.220.101.33`** — hammering (port 445 / SMB)
-
-`report.json` example:
-
-```json
-[
-  { "src_ip": "203.0.113.45", "total": 45, "unique_ports": 1, "blocked": 45, "blocked_ratio": 1.0, "anomaly": -1 }
-]
-```
 
 ### 🚀 How to run
 
@@ -90,17 +92,11 @@ pip install pandas scikit-learn matplotlib
 python firewall_analyser.py
 ```
 
-Make sure `firewall_big.log` is in the same folder.
+`firewall_big.log` must be in the same folder. The script creates `firewall.db` automatically.
 
 ### 🛠️ Tech stack & concepts
 
-Python · pandas · scikit-learn · matplotlib · object-oriented programming (`class`, `self`, methods calling methods) · feature engineering · anomaly detection
-
-### 🗺️ Roadmap
-
-- ✅ **Phase 1** — local core (this repo): parse, analyse, report, plot
-- ⬜ **Phase 2** — streaming simulation + database storage
-- ⬜ **Phase 3** — cloud deployment (AWS S3 + Lambda + SNS alerts)
+Python · pandas · scikit-learn · matplotlib · SQLite (`sqlite3`) · object-oriented programming · feature engineering · anomaly detection · **stream processing** (buffering, accumulating state, tail handling) · idempotent writes
 
 ---
 
@@ -108,76 +104,78 @@ Python · pandas · scikit-learn · matplotlib · object-oriented programming (`
 
 ### 🎯 Cel projektu
 
-Samodzielny **analizator logów firewalla**, który bierze surowy log i odpowiada na jedno pytanie bezpieczeństwa: **które adresy IP zachowują się podejrzanie?** Parsuje log, buduje liczbowy portret zachowania każdego IP, używa modelu Isolation Forest do wskazania tych, które odstają, i eksportuje wynik jako raport w konsoli, plik JSON oraz wykres punktowy.
+**Analizator logów firewalla**, który odpowiada na jedno pytanie bezpieczeństwa: **które adresy IP zachowują się podejrzanie?** Parsuje log, buduje portret zachowania każdego IP, wskazuje odstających modelem Isolation Forest i utrwala wyniki. Działa w dwóch trybach: **wsadowym** (analiza całego pliku naraz) i **strumieniowym** (przetwarzanie linia po linii, jakby logi napływały na żywo).
 
-To **faza 1 (lokalny rdzeń)** większego projektu. Mapa drogowa: lokalny rdzeń → symulacja strumienia + baza danych → wdrożenie w chmurze (AWS S3 / Lambda / SNS).
+### 🗺️ Mapa drogowa
 
-### 🧠 Po co programowanie obiektowe?
+- ✅ **Faza 1** — lokalny rdzeń: parse, analyze, report, plot
+- ✅ **Faza 2** — zapis do bazy SQLite + symulacja strumienia
+- ⬜ **Faza 3** — wdrożenie w chmurze (AWS S3 + Lambda + alerty SNS)
 
-Wszystko jest zamknięte w jednej klasie `FirewallAnalyser` zamiast luźnych skryptów. Klasa wiąże **dane** (co *ma*) z **metodami** (co *umie*):
+### 🧠 Architektura: jedna klasa, dwa tryby
 
-- **ma** → ścieżkę do logu, sparsowane rekordy, tabelę wyników (`self.filepath`, `self.records`, `self.results`)
-- **umie** → parse, analyze, run, report, save_report, plot
+Wszystko mieści się w klasie `FirewallAnalyser`. Kluczową decyzją Fazy 2 było rozdzielenie parsowania na dwie metody, żeby **ten sam parser** działał na pliku *lub* buforze linii strumienia:
 
-Klasa przyjmuje ścieżkę do logu przy tworzeniu, więc jedna klasa może analizować dowolny plik:
+- `parse_to_lines(lines)` — parsuje dowolną listę linii (właściwa logika)
+- `parse()` — otwiera plik i przekazuje jego linie do `parse_to_lines`
+
+To jedno rozdzielenie sprawia, że tryb wsadowy i strumieniowy współdzielą ten sam kod.
 
 ```python
+# Tryb wsadowy
 analyzer = FirewallAnalyser("firewall_big.log")
-analyzer.run()           # parsuj + analizuj
-analyzer.report()        # wypisz podejrzane IP
-analyzer.save_report()   # wyeksportuj do report.json
-analyzer.plot()          # zwizualizuj
+analyzer.run()            # parsuj + analizuj
+analyzer.report()         # wypisz podejrzane IP
+analyzer.save_to_db()     # zapisz do SQLite
+analyzer.plot()           # zwizualizuj
+
+# Tryb strumieniowy
+streamer = FirewallAnalyser("firewall_big.log")
+streamer.stream()         # buforuje, akumuluje, zapisuje do bazy na bieżąco
 ```
 
-### 📋 Jak działa pipeline
+### 📋 Rdzeń pipeline (Faza 1)
 
-#### 1. `parse()` — surowy log → uporządkowane rekordy
+1. **`parse_to_lines()` / `parse()`** — logi firewalla mają format `KLUCZ=WARTOŚĆ`. Parser wyłuskuje `SRC`, `ACTION`, `DPT`, `PROTO` z każdej linii do słownika. Zmienne resetują się na `None` co linię, żeby brakujące pole nie odziedziczyło wartości z poprzedniej.
 
-Logi firewalla mają format `KLUCZ=WARTOŚĆ`. Parser czyta linia po linii, rozbija każdą linię na kawałki i wyłuskuje `SRC`, `ACTION`, `DPT`, `PROTO`. Każda linia staje się słownikiem zapisanym w `self.records`.
+2. **`analyze()`** — grupuje zdarzenia per IP w cechy (`total`, `unique_ports`, `blocked`, `blocked_ratio`) i uruchamia **Isolation Forest**, wskazując odstających (`1` = normalny, `-1` = anomalia). `contamination=0.2` to pokrętło czułości.
 
-Zmienne są resetowane na `None` na początku każdej linii — więc linia bez jakiegoś pola (np. ping ICMP nie ma portu) zachowuje czyste `None` zamiast dziedziczyć wartość z poprzedniej linii.
+3. **`report()` / `save_report()` / `plot()`** — wynik na konsolę, eksport JSON (z `reset_index()`, by IP przetrwało), oraz wykres punktowy podpisujący anomalie.
 
-#### 2. `analyze()` — rekordy → portret zachowania + wykrywanie anomalii
+### 🗄️ Zapis do bazy (Faza 2)
 
-Rekordy stają się DataFrame pandas. Zdarzenia są grupowane po IP i podsumowane w cechy:
+Zamiast jednego nadpisywanego pliku JSON, wyniki lądują w bazie **SQLite** (`firewall.db`, tabela `threats`).
 
-| Cecha | Znaczenie | Napastnik | Normalny user |
-|---|---|---|---|
-| `total` | jak aktywne | wysoki | umiarkowany |
-| `unique_ports` | różnorodność portów | wysoka (skan) | 1–3 |
-| `blocked` | liczba blokad | wysoka | 0 |
-| `blocked_ratio` | udział blokad | ~1.0 | ~0.0 |
+- **`save_to_db()`** stosuje strategię **czyść-i-zapisz**: `DELETE FROM threats`, potem `to_sql(...)`. Czyni to operację **idempotentną** — wielokrotne uruchomienie zawsze daje tę samą tabelę, bez duplikatów.
+- Odczyt przez `pandas.read_sql(...)` zwraca DataFrame **z nazwami kolumn** (więc liczby same się tłumaczą), w przeciwieństwie do gołych krotek z `fetchall()`.
 
-Model **Isolation Forest** wskazuje punkty odstające: `1` = normalny, `-1` = anomalia. Idea: anomalie łatwo odizolować, bo leżą daleko od tłumu; punkty normalne trudno, bo są otoczone podobnymi. `contamination=0.2` to pokrętło czułości (spodziewany udział anomalii).
+`to_sql` ↔ `read_sql` są swoim lustrem: zapisz DataFrame do bazy, wczytaj z powrotem do DataFrame.
 
-#### 3. `run()` — orkiestracja
+### 🌊 Symulacja strumienia (Faza 2)
 
-Wygodna metoda, która woła `self.parse()`, a potem `self.analyze()` w poprawnej kolejności, żeby użytkownik nie musiał jej pamiętać.
+Prawdziwe firewalle nigdy nie przestają — logi napływają bez końca. `stream()` to symuluje i rozwiązuje trzy klasyczne problemy strumienia, które pojawiają się, gdy tylko zaczniesz przetwarzać dane porcjami:
 
-#### 4. `report()` / `save_report()` — wynik
+| Problem | Objaw | Rozwiązanie |
+|---|---|---|
+| **Nadpisywanie porcji** | przetrwała tylko ostatnia porcja (1 napastnik zamiast 3) | stan narastający — jeden analizator na cały strumień |
+| **Napastnik pocięty na porcje** | `total=20` zamiast `25` | akumuluj rekordy, analizuj rosnącą całość za każdym razem |
+| **Ogon / reszta** | ostatnie linie nieprzetworzone (brakujący napastnik) | końcowy blok przetwarza resztę bufora po pętli |
 
-- `report()` wypisuje anomalie (podejrzane IP) w konsoli.
-- `save_report()` filtruje anomalie, wywołuje `reset_index()`, żeby adres IP stał się kolumną (inaczej zniknąłby jako index DataFrame), i zapisuje je do `report.json`.
+Jak działa:
 
-#### 5. `plot()` — wizualizacja
+1. Czyta linia po linii z małym opóźnieniem (`time.sleep`), naśladując napływ na żywo.
+2. Zbiera linie do **bufora**. Co `BUFFER_SIZE` linii parsuje porcję do **narastającego** `self.records`, analizuje **wszystko, co dotąd napłynęło**, i zapisuje do bazy.
+3. Po pętli końcowy blok `if buffer:` przetwarza pozostały „ogon" — linie, które nie wypełniły ostatniego pełnego bufora.
 
-Wykres punktowy z aktywnością (`total`) na osi X i różnorodnością portów (`unique_ports`) na osi Y. Te dwie cechy mówią *różne* rzeczy, więc różne typy ataków lądują w różnych miejscach: brute-forcer (wiele prób, jeden port) daleko w prawo, skaner portów (wiele portów) wysoko. Kolor koduje werdykt modelu; podpisane są tylko anomalie (ich IP).
+Ponieważ stan narasta, każdy zapis utrwala coraz pełniejszy obraz — więc napastnik rozłożony na kilka porcji jest w końcu widziany w całości, dokładnie jak w trybie wsadowym.
 
 ### 📊 Przykładowy wynik
 
-Na przykładowym logu model czysto oddziela trzech napastników od normalnego ruchu:
+Na przykładowym logu oba tryby czysto wykrywają trzech napastników:
 
-- **`203.0.113.45`** — brute-force (45 prób, wszystkie na port 22 / SSH)
+- **`203.0.113.45`** — brute-force (45 prób, port 22 / SSH)
 - **`45.155.205.211`** — skanowanie portów (15 różnych portów)
 - **`185.220.101.33`** — hammering (port 445 / SMB)
-
-Przykład `report.json`:
-
-```json
-[
-  { "src_ip": "203.0.113.45", "total": 45, "unique_ports": 1, "blocked": 45, "blocked_ratio": 1.0, "anomaly": -1 }
-]
-```
 
 ### 🚀 Jak uruchomić
 
@@ -186,14 +184,8 @@ pip install pandas scikit-learn matplotlib
 python firewall_analyser.py
 ```
 
-Upewnij się, że `firewall_big.log` jest w tym samym folderze.
+`firewall_big.log` musi być w tym samym folderze. Skrypt tworzy `firewall.db` automatycznie.
 
 ### 🛠️ Technologie i pojęcia
 
-Python · pandas · scikit-learn · matplotlib · programowanie obiektowe (`class`, `self`, metody wołające metody) · inżynieria cech · wykrywanie anomalii
-
-### 🗺️ Mapa drogowa
-
-- ✅ **Faza 1** — lokalny rdzeń (to repo): parse, analyze, report, plot
-- ⬜ **Faza 2** — symulacja strumienia + zapis do bazy danych
-- ⬜ **Faza 3** — wdrożenie w chmurze (AWS S3 + Lambda + alerty SNS)
+Python · pandas · scikit-learn · matplotlib · SQLite (`sqlite3`) · programowanie obiektowe · inżynieria cech · wykrywanie anomalii · **przetwarzanie strumieniowe** (buforowanie, stan narastający, obsługa ogona) · idempotentny zapis
