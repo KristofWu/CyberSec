@@ -18,7 +18,7 @@ A **firewall log analyser** that answers one security question: **which IP addre
 
 - ✅ **Phase 1** — local core: parse, analyse, report, plot
 - ✅ **Phase 2** — SQLite database storage + streaming simulation
-- ⬜ **Phase 3** — cloud deployment (AWS S3 + Lambda + SNS alerts)
+- ⬜ **Phase 3** — cloud deployment (AWS S3 + Lambda + SNS alerts) (https://github.com/KristofWu/CyberSec/tree/17de7991a6da365a3c689e02feef3899277b83da/Firewall_analyser/cloud)
 
 ### 🧠 Architecture: one class, two modes
 
@@ -112,7 +112,7 @@ Python · pandas · scikit-learn · matplotlib · SQLite (`sqlite3`) · object-o
 
 - ✅ **Faza 1** — lokalny rdzeń: parse, analyze, report, plot
 - ✅ **Faza 2** — zapis do bazy SQLite + symulacja strumienia
-- ⬜ **Faza 3** — wdrożenie w chmurze (AWS S3 + Lambda + alerty SNS)
+- ⬜ **Faza 3** — wdrożenie w chmurze (AWS S3 + Lambda + alerty SNS) (https://github.com/KristofWu/CyberSec/tree/17de7991a6da365a3c689e02feef3899277b83da/Firewall_analyser/cloud)
 
 ### 🧠 Architektura: jedna klasa, dwa tryby
 
