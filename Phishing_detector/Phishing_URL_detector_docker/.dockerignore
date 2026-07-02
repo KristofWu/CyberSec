@@ -1,0 +1,10 @@
+
+venv/
+src/venv/
+.env
+.git/
+.gitignore
+__pycache__/
+*.pyc
+notebooks/
+README.md
