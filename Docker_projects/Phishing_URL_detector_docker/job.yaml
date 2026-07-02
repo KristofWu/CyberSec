@@ -1,0 +1,21 @@
+apiVersion: batch/v1          # która "grupa API" K8s - Joby są w batch/v1
+kind: Job                     # typ obiektu: Job (uruchom raz, do zakończenia)
+metadata:
+  name: phishing-detector     # nazwa naszego Joba
+spec:
+  template:                   # szablon Poda, który Job ma uruchomić
+    spec:
+      restartPolicy: Never    # nie restartuj po zakończeniu (to nie serwis!)
+      containers:
+        - name: phishing-detector
+          image: phishing-detector:latest   # nasz obraz z magazynu Minikube
+          imagePullPolicy: Never             # NIE ściągaj z internetu - użyj lokalnego
+          env:
+            - name: DATA_PATH
+              value: "data/phishing_url_dataset_unique.csv"
+            - name: GEMINI_API_KEY          # nazwa zmiennej, jaką zobaczy Twój kod
+              valueFrom:                     # zamiast "value" (wprost) - "valueFrom" (z czegoś)
+                secretKeyRef:                # konkretnie: z Secreta
+                  name: gemini-secret        # z sekretu o tej nazwie
+                  key: GEMINI_API_KEY        # weź tę konkretną wartość (klucz w .env)                               # zmienne środowiskowe (nasze DATA_PATH)
+  backoffLimit: 2             # ile razy próbować ponownie, jeśli Job faktycznie padnie

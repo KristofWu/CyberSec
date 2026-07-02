@@ -117,10 +117,81 @@ docker run --env-file .env -e DATA_PATH=data/phishing_url_dataset_unique.csv phi
 
 **Lean build context.** A `.dockerignore` excludes `venv/`, `.git/`, `notebooks/`, and Python caches, keeping the build context small and builds fast.
 
+## ☸️ Run on Kubernetes
+
+The detector runs as a Kubernetes **Job** on a local [Minikube](https://minikube.sigs.k8s.io/) cluster. A Job is the right primitive here: the script runs once to completion (train → evaluate → explain) and exits — unlike a long-running service, which would use a Deployment.
+
+### Prerequisites
+- `kubectl` and `minikube` installed
+- A running cluster: `minikube start --driver=docker`
+
+### 1. Make the image available to the cluster
+Minikube keeps its own image store, separate from the local Docker daemon. Load the locally built image into it:
+```bash
+minikube image load phishing-detector
+```
+
+### 2. Store the API key as a Secret
+The Gemini key is kept in a Kubernetes `Secret`, created directly from the existing `.env` file — the value lives in the cluster, never in the manifest:
+```bash
+kubectl create secret generic gemini-secret --from-env-file=.env
+```
+
+### 3. Run the Job
+```bash
+kubectl apply -f job.yaml
+```
+
+### 4. Inspect the result
+```bash
+kubectl get pods                 # wait for STATUS: Completed
+kubectl logs <pod-name>          # view training output + LLM explanation
+```
+
+### 5. Clean up
+```bash
+kubectl delete -f job.yaml
+```
+
+### The manifest (`job.yaml`)
+```yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: phishing-detector
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: phishing-detector
+          image: phishing-detector:latest
+          imagePullPolicy: Never
+          env:
+            - name: DATA_PATH
+              value: "data/phishing_url_dataset_unique.csv"
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: gemini-secret
+                  key: GEMINI_API_KEY
+  backoffLimit: 2
+```
+
+### Design notes
+
+**Job, not Deployment.** The workload is a batch task that terminates on success. A Deployment would treat the exiting container as a crash and restart it endlessly (`CrashLoopBackOff`). `restartPolicy: Never` + a Job match the actual lifecycle.
+
+**Secrets via `secretKeyRef`, not plaintext.** `GEMINI_API_KEY` is pulled from the `gemini-secret` object with `valueFrom.secretKeyRef` — the manifest holds only a *reference*, so `job.yaml` is safe to commit. (Note: Kubernetes Secrets are base64-encoded, not encrypted; real protection comes from RBAC and etcd encryption at rest.)
+
+**Local image, no registry pull.** `imagePullPolicy: Never` forces Kubernetes to use the image loaded into Minikube instead of trying to pull from a remote registry — required when the image only exists locally.
+
+**Same env-var contract as Docker.** `DATA_PATH` and `GEMINI_API_KEY` are the same variables the container already expects, so the image runs unchanged whether started by `docker run` or by Kubernetes — only the *source* of the values differs.
+
 ## 🔐 Security note
 
 The Gemini API key is loaded from a `.env` file via `python-dotenv` and never hardcoded. Add `.env` to `.gitignore` so the secret never reaches the repository.
 
 ## 🛠️ Tech stack
 
-Python · pandas · scikit-learn (Random Forest) · Google Gemini API · python-dotenv · Docker
+Python · pandas · scikit-learn (Random Forest) · Google Gemini API · python-dotenv · Docker · Kubernetes (Minikube)
