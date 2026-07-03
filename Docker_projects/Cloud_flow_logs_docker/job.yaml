@@ -1,0 +1,13 @@
+apiVersion: batch/v1          # która "grupa API" K8s - Joby są w batch/v1
+kind: Job                     # typ obiektu: Job (uruchom raz, do zakończenia)
+metadata:
+  name: flow-analyzer     # nazwa naszego Joba
+spec:
+  template:                   # szablon Poda, który Job ma uruchomić
+    spec:
+      restartPolicy: Never    # nie restartuj po zakończeniu (to nie serwis!)
+      containers:
+        - name: flow-analyzer
+          image: flow-analyzer:latest   # nasz obraz z magazynu Minikube
+          imagePullPolicy: Never             # NIE ściągaj z internetu - użyj lokalnego
+  backoffLimit: 2             # ile razy próbować ponownie, jeśli Job faktycznie padnie

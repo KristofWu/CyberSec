@@ -71,11 +71,77 @@ The Lambda reads positions 3 (srcaddr), 6 (dstport), and 12 (action) — enough 
 ```
 cloud-network-security-monitor/
 ├── README.md
+├── Dockerfile               # containerizes the local analyzer
+├── job.yaml                 # Kubernetes Job manifest
 ├── src/
 │   ├── lambda_function.py   # the deployed Lambda (S3 → analyse → SNS)
 │   └── flow_analysis.py     # local exploration (top IPs, ports, scanners, stats)
 └── data/                    # sample flow logs (not committed)
 ```
+
+## 🐳 Run the analyzer in Docker / Kubernetes
+
+The AWS pipeline above is the production path — Lambda runs the analysis serverlessly in response to S3 events. For **local development and offline analysis**, the same detection logic (`flow_analysis.py`) also runs as a standalone container. This is a separate execution path from the Lambda: no AWS account, no S3, no credentials — just a log file in, a report out.
+
+> Only `flow_analysis.py` is containerized. `lambda_function.py` stays AWS-native (it depends on S3/SNS events and `boto3`), so it isn't part of the image.
+
+### Why it's a lean image
+`flow_analysis.py` uses only the Python standard library (`sys`, `collections`) — no third-party packages. That means **no `requirements.txt` and no `pip install` step**: the Dockerfile just copies the code and data and sets the run command.
+
+```dockerfile
+FROM python:3.12-slim
+WORKDIR /app
+COPY src/ ./src/
+COPY data/ ./data/
+CMD ["python", "src/flow_analysis.py", "data/logs.log"]
+```
+
+The log path is baked into `CMD` as an argument (the script reads `sys.argv[1]`), so there's nothing to configure at runtime.
+
+### Docker
+```bash
+docker build -t flow-analyzer .
+docker run flow-analyzer
+```
+No flags needed — no secrets, no environment variables. The report prints straight to stdout.
+
+### Kubernetes (local, Minikube)
+The analyzer runs once to completion, so it's modeled as a **Job**, not a Deployment.
+
+```bash
+# make the locally built image available to the cluster
+minikube image load flow-analyzer
+
+# run it
+kubectl apply -f job.yaml
+
+# inspect
+kubectl get pods
+kubectl logs <pod-name>
+
+# clean up
+kubectl delete -f job.yaml
+```
+
+The manifest (`job.yaml`) carries no `env` or `Secret` block — unlike a service that needs API keys, this batch job needs only the image and its baked-in argument:
+
+```yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: flow-analyzer
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: flow-analyzer
+          image: flow-analyzer:latest
+          imagePullPolicy: Never
+  backoffLimit: 2
+```
+
+`imagePullPolicy: Never` tells Kubernetes to use the image loaded into Minikube instead of pulling from a remote registry.
 
 ## 🚀 Deployment (summary)
 
@@ -96,7 +162,7 @@ cloud-network-security-monitor/
 
 ## 🛠️ Tech stack
 
-Python · boto3 · AWS VPC Flow Logs · S3 · Lambda · SNS · EC2 · IAM
+Python · boto3 · AWS VPC Flow Logs · S3 · Lambda · SNS · EC2 · IAM · Docker · Kubernetes (Minikube)
 
 ## 📌 Possible extensions
 
