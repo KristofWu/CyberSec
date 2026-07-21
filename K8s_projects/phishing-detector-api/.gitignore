@@ -1,0 +1,13 @@
+# Secrets - never commit API keys
+.env
+
+# Virtual environment - machine-specific, hundreds of MB
+venv/
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Trained model - regenerable artifact, not source code
+models/*.pkl
