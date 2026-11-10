@@ -1,0 +1,28 @@
+# Local virtualenvs
+.venv/
+venv/
+env/
+ENV/
+
+# CrewAI / local project metadata
+.crewai/
+.crewai/**
+.crewai_cache/
+
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Prevent accidental nested Git repos / worktrees
+.git/
+**/.git/
+**/.git/**
+.git/worktrees/
+**/.git/worktrees/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
